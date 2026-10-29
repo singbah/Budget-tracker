@@ -3,25 +3,24 @@ import os
 import sys
 import sqlite3
 
-# -----FIND AND INIT DATABASE--- #
-
 def get_db_path():
-    """Resolve the SQLite database path, supporting both development and PyInstaller builds."""
+    """Resolve the SQLite database path safely for both dev and installed .deb apps."""
     if getattr(sys, 'frozen', False):
-        # Running as a compiled PyInstaller executable (stores DB next to the binary)
-        base_dir = os.path.dirname(sys.executable)
+        # Installed app: Store database in user's writable home folder
+        base_dir = os.path.expanduser("~/.local/share/budget-tracker")
     else:
-        # Running as a standard script (navigates up from app/database/my_database.py to root)
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        # Development mode: Keep it inside app/database/
+        base_dir = os.path.dirname(__file__)
         
-    return os.path.join(base_dir, "app", "database", "budget_tracker_db.db")
+    # Ensure the directory exists
+    os.makedirs(base_dir, exist_ok=True)
+    
+    return os.path.join(base_dir, "budget_tracker_db.db")
 
 def get_connection():
     """Open and return a SQLite database connection."""
     db_path = get_db_path()
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA foreign_keys = ON;")
-    return conn
+    return sqlite3.connect(db_path)
 
 def init_db():
     """Initialize database tables and default categories."""

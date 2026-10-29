@@ -77,6 +77,7 @@ class BudgetApp(tk.Tk):
         self.filter_view = FilterBar(
             parent=right_container,
             categories=categories,
+            total_stuff=get_current_month_total(),
             on_filter_callback=self.handle_filter_transactions
         )
         self.filter_view.grid(row=1, column=0, sticky="ew", pady=(0, 10))
@@ -175,7 +176,7 @@ class BudgetApp(tk.Tk):
     # Import get_filtered_transactions from my_database in main.py
 
     def handle_filter_transactions(self, keyword, category_name, start_date, end_date):
-        """Fetch filtered records from SQLite and load them into the table."""
+        """Fetch filtered records from SQLite, calculate their total, and load them into the table."""
         transactions = get_filtered_transactions(
             keyword=keyword, 
             category_name=category_name, 
@@ -183,6 +184,61 @@ class BudgetApp(tk.Tk):
             end_date=end_date if end_date else None
         )
         self.table_view.load_data(transactions)
+        
+        cat_sums = {}
+        for tr in transactions:
+            price = tr["price"]
+            cat_name = tr["category_name"] if tr["category_name"] else "Uncategorized"
+            cat_sums[cat_name] = cat_sums.get(cat_name, 0.0) + price
+        
+        filtered_breakdown = [
+            {"category_name": cat, "total": total} 
+            for cat, total in cat_sums.items()
+        ]
+        
+        # Calculate the sum of prices from the filtered transactions (index 2 is price)
+        filtered_total = sum(t['price'] for t in transactions) if transactions else 0.0
+        self.filter_view.update_total(filtered_total)
+        
+        # 4. Update the Chart with filtered data
+        self.chart_view.update_chart(filtered_breakdown)
+        
+        impulse_stats = {}
+        total_impulse_spend = 0.0
+        
+        for t in transactions:
+            price = t['price']
+            # Adjust the key name if your database row key is different (e.g., 'impulse_type' or 'impulse')
+            impulse_type = t.get('impulse_type') or "Unknown"
+            
+            # Initialize dictionary entry if it doesn't exist
+            if impulse_type not in impulse_stats:
+                impulse_stats[impulse_type] = {"total": 0.0, "count": 0}
+                
+            impulse_stats[impulse_type]["total"] += price
+            impulse_stats[impulse_type]["count"] += 1
+            
+            # Define what counts as unplanned/impulse spend for the ratio percentage
+            # (Adjust these strings to match your exact database values, e.g., 'Impulse', 'Unplanned', 'Yes')
+            if str(impulse_type).lower() in ['impulse', 'unplanned', 'yes', 'emotional']:
+                total_impulse_spend += price
+
+        # Convert dictionary into the list of dicts format expected by ImpulseInsights
+        filtered_impulse_data = [
+            {
+                "impulse_type": itype, 
+                "total": stats["total"], 
+                "count": stats["count"]
+            }
+            for itype, stats in impulse_stats.items()
+        ]
+        
+        # Calculate percentage ratio
+        filtered_ratio = (total_impulse_spend / filtered_total * 100) if filtered_total > 0 else 0.0
+        
+        # Update the Impulse Insights view component
+        self.impulse_view.update_insights(filtered_ratio, filtered_impulse_data)
+        
     
     # Add the handler methods inside BudgetApp class:
     def handle_open_edit_modal(self, trans_id):
